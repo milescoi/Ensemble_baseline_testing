@@ -1,0 +1,250 @@
+setwd("C:/Users/miles/Desktop/COI_baseline")
+install.packages(c("tidyverse", "lubridate"))#Please run this to install these packages first for pre-processing 
+
+#load/import the packages just installed
+library(tidyverse)
+library(lubridate)
+
+#read data into object:data
+#function read.csv2 takes care of commas
+data <- read.csv2("LD2011_2014.txt", sep = ";")
+
+                                 ### DATA Prepocessing ###
+
+#column 0 in python, in r column 1 is the date time column we will use as index must convert to posixt/dttm class
+head(data)
+class(data$X) #currrently factor
+data$X <- as.character(data$X) # turning column 1 to character first 
+data$X <- ymd_hms(data$X) # converting to class POSIXt (datetime)
+class(data$X) # checking it is correct class
+
+
+#remove many missing data from the beggining of data frame  and selecting cols 1:12 save as :d1
+d1 <- data %>%
+        select(c(1:12))%>%
+        filter(X > "2011-12-31 23:45:00")
+
+#look at data      
+View(d1[1:10, 1:12]) #nice viewer if using r studio
+head(d1[1:10, 1:12]) #look at data in console if using default ui
+
+
+#create some additional features coded as numerics(flaots in python) avoid zeros 
+structured_data <- d1 %>% 
+                    mutate(day = as.numeric(wday(d1$X, label = FALSE)))%>%
+                    mutate(month = as.numeric(month(d1$X, label = FALSE)))%>%
+                    mutate(hour = as.numeric(hour(d1$X)) + 1)%>%
+                    mutate(minute = as.numeric(minute(d1$X)) + 1)%>%
+                    rename(date_time = X)
+
+#create test data
+test_d1 <- structured_data %>%
+                  filter(date_time >= "2014-10-01")
+
+#create train data
+train_d1 <- structured_data%>%
+                  filter(date_time < "2014-10-01")
+
+
+
+
+
+                    ### TRAIN AND TEST MODEL MT_004 ###
+
+#Training model on training data
+MT_004_T1 <- loess(MT_004 ~ day + month + hour + I(month*hour),
+                   data = train_d1,
+                   span = 0.065,
+                   family = "symmetric",
+                   surface = "direct",
+                   degree = "2")
+summary(MT_004_T1)
+
+#Predicting on Test data using columns day, month, hour
+predict_MT_004 <- predict(MT_004_T1, newdata = test_d1[,c("day", "month", "hour")])
+
+#combining prediction with target and index
+MT_004_out <- cbind(test_d1[, c("date_time", "MT_004")], predict_MT_004)
+
+#Out of sample mape 13.25906% with just loess model
+sum(abs((MT_004_out$predict_MT_004 - MT_004_out$MT_004)/MT_004_out$MT_004))/nrow(MT_004_out)
+
+#Developing the ensemble here running an auto state space model on resids from trained loess model:MT_004_T1
+install.packages("forecast")
+library(forecast)
+
+#run secondary model
+MT_004_T2 <- tbats(MT_004_T1$residuals)
+
+#get fitted values for model                 
+resid_forecast <- forecast(MT_004_T2, h = nrow(MT_004_out))
+
+ls(resid_forecast)#looking at model outputs
+correction <- as.vector(resid_forecast$mean)#taking the mean prediction from tbats
+
+#Adding this in the series
+MT_004_out_2 <- cbind(test_d1[, c("date_time", "MT_004")], predict_MT_004, correction)
+MT_004_out_2 <- MT_004_out_2%>% 
+                      mutate(new_pred = correction + predict_MT_004)
+
+#doing some quick checks to make sure tbats will help
+E1 <- sum(abs(MT_004_out_2$MT_004 - MT_004_out_2$predict_MT_004))
+
+E2 <- sum(abs(MT_004_out_2$MT_004 - (MT_004_out_2$predict_MT_004+MT_004_out_2$correction)))
+
+E1>E2
+  
+#Out of sample mape 0.1079305 with ensemble
+sum(abs((MT_004_out_2$new_pred - MT_004_out_2$MT_004)/MT_004_out_2$MT_004))/nrow(MT_004_out_2)
+
+
+
+
+
+                        ### TRAIN AND TEST MODEL MT_006 ###
+
+
+#Training model on training data
+MT_006_T1 <- loess(MT_006 ~ day + month + hour + I(month*hour),
+                   data = train_d1,
+                   span = 0.065,
+                   family = "symmetric",
+                   surface = "direct",
+                   degree = "2")
+
+#Predicting on Test data using columns day, month, hour
+predict_MT_006 <- (predict(MT_006_T1, newdata = test_d1[,c("day", "month", "hour")]))
+
+#combining prediction with target and index
+MT_006_out <- cbind(test_d1[, c("date_time", "MT_006")], predict_MT_006)
+
+#Out of sample mape 0.1099191 with just loess model
+sum(abs((MT_006_out$predict_MT_006 - MT_006_out$MT_006)/MT_006_out$MT_006))/nrow(MT_006_out)
+
+
+#run secondary model
+MT_006_T2 <- tbats(MT_006_T1$residuals)
+
+#get fitted values for model                 
+resid_forecast <- forecast(MT_006_T2, h = nrow(MT_006_out))
+
+#taking the mean prediction from tbats
+correction <- as.vector(resid_forecast$mean)
+
+
+#Adding this in the series
+MT_006_out_2 <- cbind(test_d1[, c("date_time", "MT_006")], predict_MT_006, correction)
+MT_006_out_2 <- MT_006_out_2%>% 
+  mutate(new_pred = correction + predict_MT_006)
+
+#doing some quick checks to make sure tbats will help
+E1 <- sum(abs(MT_006_out_2$MT_006 - MT_006_out_2$predict_MT_006))
+
+E2 <- sum(abs(MT_006_out_2$MT_006 - (MT_006_out_2$predict_MT_006+MT_006_out_2$correction)))
+
+E1 > E2
+
+#Out of sample mape 0.1058079 with ensemble
+sum(abs((MT_006_out_2$new_pred - MT_006_out_2$MT_006)/MT_006_out_2$MT_006))/nrow(MT_006_out_2)
+
+
+
+
+
+                           ### TRAIN AND TEST MODEL MT_008 ###
+
+#Training model on training data
+MT_008_T1 <- loess(MT_008 ~ day + month + hour + I(month*hour),
+                   data = train_d1,
+                   span = 0.065,
+                   family = "symmetric",
+                   surface = "direct",
+                   degree = "2")
+
+#Predicting on Test data using columns day, month, hour
+predict_MT_008 <- predict(MT_008_T1, newdata = test_d1[,c("day", "month", "hour")])
+
+#combining prediction with target and index
+MT_008_out <- cbind(test_d1[, c("date_time", "MT_008")], predict_MT_008)
+
+
+#Out of sample mape 0.09848038 with just loess model
+sum(abs((MT_008_out$predict_MT_008 - MT_008_out$MT_008)/MT_008_out$MT_008))/nrow(MT_008_out)
+
+#run secondary model
+MT_008_T2 <- tbats(MT_008_T1$residuals)
+
+#get fitted values for model                 
+resid_forecast <- forecast(MT_008_T2, h = nrow(MT_008_out))
+
+#taking the mean prediction from tbats
+correction <- as.vector(resid_forecast$mean)
+
+#Adding this in the series
+MT_008_out_2 <- cbind(test_d1[, c("date_time", "MT_008")], predict_MT_008, correction)
+MT_008_out_2 <- MT_008_out_2%>% 
+  mutate(new_pred = correction + predict_MT_008)
+
+#doing some quick checks to make sure tbats will help
+E1 <- sum(abs(MT_008_out_2$MT_008 - MT_008_out_2$predict_MT_008))
+
+E2 <- sum(abs(MT_008_out_2$MT_008 - (MT_008_out_2$predict_MT_008+MT_008_out_2$correction)))
+
+E1 > E2
+
+#Out of sample mape 0.09157827 with ensemble
+sum(abs((MT_008_out_2$new_pred - MT_008_out_2$MT_008)/MT_008_out_2$MT_008))/nrow(MT_008_out_2)
+
+
+
+
+
+
+
+                          ### TRAIN AND TEST MODEL MT_009 ###
+
+
+#Training model on training data
+MT_009_T1 <- loess(MT_009 ~ day + month + hour + I(month*hour),
+                   data = train_d1,
+                   span = 0.065,
+                   family = "symmetric",
+                   surface = "direct",
+                   degree = "2")
+
+
+#Predicting on Test data using columns day, month, hour
+predict_MT_009 <- as.data.frame(predict(MT_009_T1, newdata = test_d1[,c("day", "month", "hour")]))
+
+
+#combining prediction with target and index
+MT_009_out <- cbind(test_d1[, c("date_time", "MT_009")], predict_MT_009)
+
+
+#Out of sample mape ________ with just loess model
+sum(abs((MT_009_out$predict_MT_009 - MT_009_out$MT_009)/MT_009_out$MT_009))/nrow(MT_009_out)
+
+
+
+
+
+
+                             ### TRAIN AND TEST MODEL MT_011 ###
+
+#Training model on training data
+MT_011_T1 <- loess(MT_011 ~ day + month + hour + I(month*hour),
+                   data = train_d1,
+                   span = 0.065,
+                   family = "symmetric",
+                   surface = "direct",
+                   degree = "2")
+
+
+#Predicting on Test data using columns day, month, hour
+predict_MT_011 <- as.data.frame(predict(MT_011_T1, newdata = test_d1[,c("day", "month", "hour")]))
+
+
+#Out of sample mape _______ with just loess model
+sum(abs((MT_011_out$predict_MT_011 - MT_011_out$MT_011)/MT_011_out$MT_011))/nrow(MT_011_out)
+
+
