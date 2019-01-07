@@ -186,7 +186,7 @@ MT_008_out_2 <- MT_008_out_2%>%
   mutate(new_pred = correction + predict_MT_008)
 
 #doing some quick checks to make sure tbats will help
-E1 <- sum(abs(MT_008_out_2$MT_008 - MT_008_out_2$predict_MT_008))
+  E1 <- sum(abs(MT_008_out_2$MT_008 - MT_008_out_2$predict_MT_008))
 
 E2 <- sum(abs(MT_008_out_2$MT_008 - (MT_008_out_2$predict_MT_008+MT_008_out_2$correction)))
 
@@ -207,7 +207,7 @@ sum(abs((MT_008_out_2$new_pred - MT_008_out_2$MT_008)/MT_008_out_2$MT_008))/nrow
 #Training model on training data
 MT_009_T1 <- loess(MT_009 ~ day + month + hour + I(month*hour),
                    data = train_d1,
-                   span = 0.065,
+                   span = 0.065,  #####if convergence issue arise use higher span ex. 0.07
                    family = "symmetric",
                    surface = "direct",
                    degree = "2")
