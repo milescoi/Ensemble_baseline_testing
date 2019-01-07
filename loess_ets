@@ -19,7 +19,7 @@ data$X <- ymd_hms(data$X) # converting to class POSIXt (datetime)
 class(data$X) # checking it is correct class
 
 
-#remove many missing data from the beggining of data frame  and selecting cols 1:12 save as :d1
+(#remove many missing data from the beggining of data frame  and selecting cols 1:12 save as :d1
 d1 <- data %>%
         select(c(1:12))%>%
         filter(X > "2011-12-31 23:45:00")
